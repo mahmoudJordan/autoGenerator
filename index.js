@@ -2,7 +2,7 @@ const sql = require('mssql');
 const { simpleFaker, fakerEN } = require('@faker-js/faker');
 
 const faker = fakerEN;
-
+let counter = 0;
 const config = {
     user: 'SA',
     password: 'p@ssword!!=232321',
@@ -39,24 +39,6 @@ async function getTableDependencies() {
 
     return dependencies;
 }
-
-async function sortTablesBasedOnDependencies(tables, dependencies) {
-    let sorted = [], visited = {};
-
-    function visit(table) {
-        if (visited[table]) return;
-        visited[table] = true;
-
-        // Visit all tables that are dependent on this one
-        dependencies[table]?.forEach(visit);
-
-        sorted.push(table);
-    }
-
-    tables.forEach(visit);
-    return sorted;
-}
-
 
 
 async function buildDependencyGraph(tables, dependencies) {
@@ -115,19 +97,30 @@ async function topologicalSort(graph) {
 }
 
 
-async function insertIntoTable(table, dependencies, insertedData, alreadyProcessed = new Set()) {
+async function insertIntoTable(table, dependencies, insertedData, alreadyProcessed = new Set(), callStack = new Set()) {
     // Avoid re-processing tables
     if (alreadyProcessed.has(table)) {
         return;
     }
 
+    // Detect cyclical dependencies
+    if (callStack.has(table)) {
+        console.error(`Cyclical dependency detected at table: ${table}`);
+        return; // Break the cycle
+    }
+    callStack.add(table);
+
 
     // Check if the table's dependencies are already filled
     for (const dependency of dependencies[table] || []) {
-        if (!insertedData[dependency]) {
-            await insertIntoTable(dependency, dependencies, insertedData, alreadyProcessed); // Recursively fill dependencies first
-        }
+        // if (!insertedData[dependency]) {
+            await insertIntoTable(dependency, dependencies, insertedData, alreadyProcessed, callStack);
+        // }
     }
+
+    // Remove the current table from the call stack before proceeding
+    callStack.delete(table);
+
 
 
     // Schema query and data insertion logic for the current table
@@ -170,7 +163,7 @@ WHERE
     const schema = schemaResult.recordset;
 
     let insertQuery = `INSERT INTO ${table} (`;
-    let valuesQuery = 'VALUES (';
+    let valuesQuery = '';
     const columnValues = [];
     const columnsNames = [];
     const outputColumns = [];
@@ -181,11 +174,16 @@ WHERE
             continue;
         }
 
+
         let data;
-        if (column.REFERENCED_TABLE_NAME) {
+        if (column.IS_PRIMARY_KEY && !column.IS_IDENTITY && !column.REFERENCED_TABLE_NAME) {
+            // Generate unique value for primary key columns
+            outputColumns.push(column.COLUMN_NAME);
+            data = generateUniquePrimaryKeyValue(column.COLUMN_NAME, column.DATA_TYPE);
+        } else if (column.REFERENCED_TABLE_NAME) {
             const refData = insertedData[column.REFERENCED_TABLE_NAME];
             data = refData && refData.length > 0 ? refData[0][column.REFERENCED_COLUMN_NAME] : 'NULL';
-        } else {
+        } else if (!column.IS_IDENTITY) {
             data = generateRandomData(column.DATA_TYPE);
         }
 
@@ -206,32 +204,50 @@ WHERE
 
         console.log(commaSaperatedValues)
 
+
+        if (outputColumns.length > 0) {
+            valuesQuery += ` OUTPUT Inserted.${outputColumns[0]} `;
+        }
+        valuesQuery += ' VALUES (';
         valuesQuery += columnValues.join(', ') + ');';
         insertQuery += valuesQuery;
 
 
-        let identityQuery = '';
-
-        if (outputColumns.length > 0) {
-            identityQuery = `SELECT SCOPE_IDENTITY() as ${outputColumns[0]}`;
-        }
-
-        insertQuery += identityQuery;
-
         console.log(insertQuery);
-        const insertResult = await sql.query(`${insertQuery} ${identityQuery}`);
+        const insertResult = await sql.query(`${insertQuery}`);
+
 
         // Store the inserted data
-        if (identityQuery) {
+        if (outputColumns.length) {
             // const identityResult = await sql.query(identityQuery);
             // Store the identity value
             insertedData[table] = insertedData[table] || [];
             insertedData[table].push(insertResult.recordset[0]);
+            ++counter
+            console.log(counter);
         } else {
             // Handle cases where no recordset is returned (e.g., no identity column)
+            if (!insertedData[table]) {
+                insertedData[table] = [];
+            }
             insertedData[table].push({}); // Push an empty object to signify that data was inserted
         }
     }
+}
+
+
+const uniquePrimaryKeys = {}; // Object to track unique primary key values
+
+function generateUniquePrimaryKeyValue(columnName, dataType) {
+    uniquePrimaryKeys[columnName] = uniquePrimaryKeys[columnName] || new Set();
+
+    let value;
+    do {
+        value = generateRandomData(dataType);
+    } while (uniquePrimaryKeys[columnName].has(value));
+
+    uniquePrimaryKeys[columnName].add(value);
+    return value;
 }
 
 async function insertRandomData() {
@@ -250,6 +266,8 @@ async function insertRandomData() {
         for (const table of sortedTables) {
             await insertIntoTable(table, dependencies, insertedData);
         }
+
+        console.log("finished");
     } catch (err) {
         console.error(err);
     }
@@ -315,3 +333,4 @@ function generateRandomData(dataType) {
 
 
 insertRandomData();
+
