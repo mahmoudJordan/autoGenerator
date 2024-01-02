@@ -1,15 +1,24 @@
-const __defaultNodeExpanded = true;
+const __defaultNodeExpanded = false;
 
-function createLabel(tableName, columns, expanded = false) {
-  let label = `<b>${tableName}</b>\n`;
+function createLabel(tableName, table, expanded = false) {
+  let label = `<b>${tableName}</b>\n\n`;
   if (expanded) {
     // Show all columns
-    label += columns.map((col) => `${col.name} (${col.type})`).join("\n\n");
+    label += table.columns.map((col) => `${col.name} (${col.type})`).join("\n\n");
   } else {
-    // Show only primary keys
-    const primaryKeys = columns.filter((col) => col.key === "PRIMARY KEY");
+    // Show only primary and foreign keys
+    const primaryKeys = table.columns.filter((col) => col.key === "PRIMARY KEY");
+
+    const foreignKeys = table.foreignKeys.map((fk) => table.columns.find(c => c.name == fk.column))
+
     label += primaryKeys
       .map((pk) => `${pk.name} (${pk.type}) [PK]`)
+      .join("\n\n");
+
+    label += '\n\n';
+
+    label += foreignKeys
+      .map((pk) => `${pk.name} (${pk.type}) [FK]`)
       .join("\n\n");
   }
   return label;
@@ -21,18 +30,27 @@ function drawERDiagram(tables) {
   let tableIndexMap = {};
 
   Object.keys(tables).forEach((tableName, index) => {
+    let table = tables[tableName];
     tableIndexMap[tableName] = index;
     nodes.push({
       id: index,
       fieldsCount: tables[tableName].columns?.length,
+      widthConstraint: {
+        maximum: 150,
+        minimum: 150
+      },
+      heightConstraint: {
+        maximum: 120,
+        minimum: 100
+      },
       tableName: tableName, // Store table name in each node
       label: createLabel(
         tableName,
-        tables[tableName].columns,
+        tables[tableName],
         __defaultNodeExpanded
       ),
       shape: "box",
-      font: { multi: "html", size: 14 },
+      font: { multi: "html", size: 10 },
       margin: 10,
       expanded: __defaultNodeExpanded, // Flag to track if the node is expanded
     });
@@ -66,8 +84,8 @@ function drawERDiagram(tables) {
   });
 
   // Manually set initial positions for nodes
-  const columnSpacing = 500;
-  const rowSpacing = 600;
+  const columnSpacing = 200;
+  const rowSpacing = 150;
   const numberOfColumns = 10; // Specify the number of columns
   const numberOfRows = 10; // Specify the number of rows
   const totalNodes = nodes.length;
@@ -93,7 +111,7 @@ function drawERDiagram(tables) {
     },
     nodes: {
       shape: "box",
-      margin: 10,
+      margin: 3,
     },
     physics: {
       enabled: false,
@@ -119,10 +137,12 @@ function drawERDiagram(tables) {
       const node = nodes.find((n) => n.id === nodeId);
       const tableName = node.tableName;
       const tableInfo = tables[tableName];
-
       // Toggle the expanded state of the node
+      debugger
+      node.x = params.event.x;
+      node.x = params.event.y;
       node.expanded = !node.expanded;
-      node.label = createLabel(tableName, tableInfo.columns, node.expanded);
+      node.label = createLabel(tableName, tableInfo, node.expanded);
 
       data.nodes.update(node);
     }
