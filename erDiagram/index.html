@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>ER Diagram</title>
+    <script
+      type="text/javascript"
+      src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"
+    ></script>
+
+    <script type="text/javascript" src="./drawErDiagram.js"></script>
+    <link
+      href="https://unpkg.com/vis-network/styles/vis-network.min.css"
+      rel="stylesheet"
+      type="text/css"
+    />
+    <style type="text/css">
+      #erDiagram {
+        width: 100%;
+        height: 100vh;
+        border: 1px solid lightgray;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="erDiagram"></div>
+    <script src="data.js"></script>
+    <script type="text/javascript">
+      // Example data from DependencyGraph
+      const dependencyData = data;
+      drawERDiagram(dependencyData);
+    </script>
+  </body>
+</html>
