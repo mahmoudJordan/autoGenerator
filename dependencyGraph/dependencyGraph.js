@@ -6,8 +6,10 @@ class DependencyGraph {
   async getTableDependencies() {
     const dependencyResults = await this.db.query(`
         SELECT 
-            fk.TABLE_NAME as dependentTable, 
-            pk.TABLE_NAME as referencedTable,
+            fk.TABLE_SCHEMA as dependentTableSchema, 
+            fk.TABLE_NAME as dependentTableName, 
+            pk.TABLE_SCHEMA as referencedTableSchema,
+            pk.TABLE_NAME as referencedTableName,
             kcu.COLUMN_NAME as foreignKeyColumn,
             rc.UPDATE_RULE,
             rc.DELETE_RULE
@@ -19,14 +21,17 @@ class DependencyGraph {
             INFORMATION_SCHEMA.TABLE_CONSTRAINTS as pk ON rc.UNIQUE_CONSTRAINT_NAME = pk.CONSTRAINT_NAME
         JOIN 
             INFORMATION_SCHEMA.KEY_COLUMN_USAGE as kcu ON fk.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
-        `);
+    `);
 
     let dependencies = {};
     dependencyResults.recordset.forEach((row) => {
-      if (!dependencies[row.dependentTable]) {
-        dependencies[row.dependentTable] = new Set();
+      const dependentFullTableName = `${row.dependentTableSchema}.${row.dependentTableName}`;
+      const referencedFullTableName = `${row.referencedTableSchema}.${row.referencedTableName}`;
+
+      if (!dependencies[dependentFullTableName]) {
+        dependencies[dependentFullTableName] = new Set();
       }
-      dependencies[row.dependentTable].add(row.referencedTable);
+      dependencies[dependentFullTableName].add(referencedFullTableName);
     });
 
     this._logDependencies(dependencies);
