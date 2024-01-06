@@ -1,5 +1,5 @@
-const sql = require("mssql/msnodesqlv8");
-const config = require("../config").sqlServer;
+const sql = require("mssql");
+const config = require("../config").sqlServer2;
 const Database = require("./dbUtils");
 
 class SqlServer extends Database {

@@ -81,52 +81,52 @@ class DataGenerator {
   async getTableSchema(table) {
     const query = `
     SELECT 
-    c.NAME as COLUMN_NAME, 
-    dt.NAME as DATA_TYPE,
-    dt.schema_id,
-    s.name as DATA_TYPE_SCHEMA,  -- Fetch the schema of the data type
-    c.max_length as MAX_LENGTH_CONSTRAINT,
-    c.is_identity as IS_IDENTITY,
-    fk.name as FK_NAME,
-    ref_s.name as REFERENCED_SCHEMA_NAME, -- Fetch the schema of the referenced table
-    ref_t.name as REFERENCED_TABLE_NAME,
-    ref_c.name as REFERENCED_COLUMN_NAME,
-    CASE WHEN pk.column_id IS NOT NULL THEN 1 ELSE 0 END as IS_PRIMARY_KEY
-FROM 
-    sys.columns c
-INNER JOIN 
-    sys.types dt ON c.user_type_id = dt.user_type_id
-LEFT JOIN 
-    sys.schemas s ON dt.schema_id = s.schema_id  -- Join to get the data type schema
-LEFT JOIN 
-    sys.foreign_key_columns as fkc ON fkc.parent_object_id = c.object_id AND fkc.parent_column_id = c.column_id
-LEFT JOIN 
-    sys.foreign_keys as fk ON fkc.constraint_object_id = fk.object_id
-LEFT JOIN 
-    sys.tables as ref_t ON fk.referenced_object_id = ref_t.object_id
-LEFT JOIN 
-    sys.schemas ref_s ON ref_t.schema_id = ref_s.schema_id -- Join to get schema of the referenced table
-LEFT JOIN 
-    sys.columns as ref_c ON fkc.referenced_column_id = ref_c.column_id AND fk.referenced_object_id = ref_c.object_id
-LEFT JOIN 
-    (SELECT 
-        ic.object_id, 
-        ic.column_id
-     FROM 
-        sys.index_columns ic
-     INNER JOIN 
-        sys.indexes i ON ic.object_id = i.object_id AND ic.index_id = i.index_id
-     WHERE 
-        i.is_primary_key = 1
-    ) as pk ON c.object_id = pk.object_id AND c.column_id = pk.column_id
-WHERE 
-    c.object_id = OBJECT_ID(N'${table}')
-
+        c.NAME as COLUMN_NAME, 
+        dt.NAME as DATA_TYPE,
+        dt.schema_id,
+        s.name as DATA_TYPE_SCHEMA,
+        c.max_length as MAX_LENGTH_CONSTRAINT,
+        c.is_identity as IS_IDENTITY,
+        fk.name as FK_NAME,
+        ref_s.name as REFERENCED_SCHEMA_NAME,
+        ref_t.name as REFERENCED_TABLE_NAME,
+        ref_c.name as REFERENCED_COLUMN_NAME,
+        CASE WHEN pk.column_id IS NOT NULL THEN 1 ELSE 0 END as IS_PRIMARY_KEY,
+        chk.definition as CHECK_CONSTRAINT,
+        def.definition as DEFAULT_CONSTRAINT
+    FROM 
+        sys.columns c
+    INNER JOIN 
+        sys.types dt ON c.user_type_id = dt.user_type_id
+    LEFT JOIN 
+        sys.schemas s ON dt.schema_id = s.schema_id
+    LEFT JOIN 
+        sys.foreign_key_columns as fkc ON fkc.parent_object_id = c.object_id AND fkc.parent_column_id = c.column_id
+    LEFT JOIN 
+        sys.foreign_keys as fk ON fkc.constraint_object_id = fk.object_id
+    LEFT JOIN 
+        sys.tables as ref_t ON fk.referenced_object_id = ref_t.object_id
+    LEFT JOIN 
+        sys.schemas ref_s ON ref_t.schema_id = ref_s.schema_id
+    LEFT JOIN 
+        sys.columns as ref_c ON fkc.referenced_column_id = ref_c.column_id AND fk.referenced_object_id = ref_c.object_id
+    LEFT JOIN 
+        (SELECT ic.object_id, ic.column_id FROM sys.index_columns ic
+         INNER JOIN sys.indexes i ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+         WHERE i.is_primary_key = 1
+        ) as pk ON c.object_id = pk.object_id AND c.column_id = pk.column_id
+    LEFT JOIN 
+        sys.check_constraints chk ON chk.parent_object_id = c.object_id AND chk.parent_column_id = c.column_id
+    LEFT JOIN 
+        sys.default_constraints def ON def.parent_object_id = c.object_id AND def.parent_column_id = c.column_id
+    WHERE 
+        c.object_id = OBJECT_ID(N'${table}')
     `;
 
     const result = await this.db.query(query);
     return result.recordset;
   }
+
 
   buildInsertQuery(table, schema, insertedData) {
     let insertQuery = `INSERT INTO ${table} (`;
@@ -142,13 +142,13 @@ WHERE
       let value;
       if (column.IS_PRIMARY_KEY && !column.IS_IDENTITY && !column.REFERENCED_TABLE_NAME) {
         outputColumns.push(column.COLUMN_NAME);
-        value = this.generateUniquePrimaryKeyValue(column, column.MAX_LENGTH_CONSTRAINT);
+        value = this.generateUniquePrimaryKeyValue(column);
       } else if (column.REFERENCED_TABLE_NAME) {
         const refData = insertedData[`${column.REFERENCED_SCHEMA_NAME}.${column.REFERENCED_TABLE_NAME}`];
         value = refData && refData.length > 0 ? refData[0][column.REFERENCED_COLUMN_NAME] : "NULL";
       } else {
         const dataType = this.getDataType(column.DATA_TYPE_SCHEMA, column.DATA_TYPE);
-        value = generateRandomData(dataType, column.MAX_LENGTH_CONSTRAINT);
+        value = generateRandomData(dataType, column);
       }
 
       columnValues.push(value === "NULL" ? value : `'${value}'`);
@@ -183,12 +183,12 @@ WHERE
     }
   }
 
-  generateUniquePrimaryKeyValue(column, MAX_LENGTH_Constraint) {
+  generateUniquePrimaryKeyValue(column) {
     this.uniquePrimaryKeys[column.COLUMN_NAME] = this.uniquePrimaryKeys[column.COLUMN_NAME] || new Set();
     let value;
     const dataType = this.getDataType(column.DATA_TYPE_SCHEMA, column.DATA_TYPE);
     do {
-      value = generateRandomData(dataType, MAX_LENGTH_Constraint);
+      value = generateRandomData(dataType, column);
     } while (this.uniquePrimaryKeys[column.COLUMN_NAME].has(value));
     this.uniquePrimaryKeys[column.COLUMN_NAME].add(value);
     return value;

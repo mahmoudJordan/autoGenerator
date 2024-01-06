@@ -1,7 +1,15 @@
 const { simpleFaker, fakerEN } = require("@faker-js/faker");
+const parseCheckConstraint = require("../parsers/parseCheckConstraint");
+const generateValueForCheckConstraint = require("../parsers/generateValueForCheckConstraint");
 const faker = fakerEN;
 
-module.exports = function generateRandomData(dataTypeInfo , MAX_LENGTH_Constraint) {
+module.exports = function generateRandomData(dataTypeInfo, column) {
+  if (column.CHECK_CONSTRAINT) {
+    generateValueForCheckConstraint(column.CHECK_CONSTRAINT)
+    const parsed = parseCheckConstraint(column.COLUMN_NAME, column.CHECK_CONSTRAINT);
+    console.log(parsed);
+  }
+  const MAX_LENGTH_Constraint = column.MAX_LENGTH_CONSTRAINT;
   const { type_name, max_length, precision, scale, is_user_defined, base_type_name } = dataTypeInfo;
 
   const _typeName = is_user_defined ? base_type_name : type_name;
