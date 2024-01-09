@@ -1,6 +1,6 @@
 const config = {
     sqlServer1: {
-        server: 'MSALAMEH-WINDOW\\SQLEXPRESS',
+        server: 'MSALAMEH-WINDOW\\SQLEXPRESS',//
         database: 'CE_DataBase_from_Stage',
         database : 'AdventureWorks2016',
         driver: "msnodesqlv8",
