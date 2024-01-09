@@ -89,7 +89,7 @@ class DataGenerator {
   buildInsertQuery(table, schema, insertedData) {
     let insertQuery = `INSERT INTO ${table} (`;
     const columnValues = [];
-    const outputColumns = [];
+    const outputColumns = [];//
 
     for (const column of schema) {
 
