@@ -4,7 +4,7 @@ const generateValueForCheckConstraint = require("../parsers/generateValueForChec
 const faker = fakerEN;
 
 module.exports = function generateRandomData(dataTypeInfo, column) {
-  if (column.CHECK_CONSTRAINT) {
+  if (column.CHECK_CONSTRAINT && false) {
     generateValueForCheckConstraint(column.CHECK_CONSTRAINT)
     const parsed = parseCheckConstraint(column.COLUMN_NAME, column.CHECK_CONSTRAINT);
     console.log(parsed);
@@ -63,7 +63,8 @@ module.exports = function generateRandomData(dataTypeInfo, column) {
       const hexLength = !_maxLength ? 32 : _maxLength * 2;
       return faker.datatype.hexaDecimal(hexLength).substring(2);
     case "xml":
-      return "<root><element>" + faker.lorem.words() + "</element></root>";
+      return null;
+      return `<root xmlns:h="http://www.w3.org/TR/html4/"><h:element> ${faker.lorem.words()} </h:element></root>`;
     case "json":
       return JSON.stringify({ key: faker.lorem.word() });
     default:
