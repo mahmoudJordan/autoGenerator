@@ -1,4 +1,10 @@
 const __defaultNodeExpanded = false;
+const baseRadius = 1; // Increased from 150 to 200
+const levelDistance = 100; // Increased from 500 to 600
+const maxNodeSize = 100; // Maximum node size to prevent oversized nodes
+// Place nodes in circles based on their level
+const centerX = window.innerWidth / 2;
+const centerY = window.innerHeight / 2;
 
 function createLabel(tableName, table, expanded = false) {
   let label = `<b>${tableName}</b>\n\n`;
@@ -17,19 +23,20 @@ function createLabel(tableName, table, expanded = false) {
 
 function calculateRelationCounts(tables) {
   let relationCounts = {};
-
+  let maxRelations = 0;
   Object.keys(tables).forEach((tableName) => {
-    let count = tables[tableName].foreignKeys.length; // Count foreign keys in the table
-    relationCounts[tableName] = count;
-
-    tables[tableName].columns.forEach((column) => {
-      if (column.key === 'FOREIGN KEY') {
-        // Increase count for the referenced table
-        relationCounts[column.references.table] = (relationCounts[column.references.table] || 0) + 1;
-      }
+    // Here we just count the relations as before
+    relationCounts[tableName] = tables[tableName].foreignKeys.length;
+    maxRelations = Math.max(maxRelations, relationCounts[tableName]);
+    tables[tableName].foreignKeys.forEach((fk) => {
+      relationCounts[fk.references.table] = (relationCounts[fk.references.table] || 0) + 1;
+      maxRelations = Math.max(maxRelations, relationCounts[fk.references.table]);
     });
   });
-
+  // Now, invert the relation count so that more relations result in a lower level value
+  Object.keys(relationCounts).forEach((tableName) => {
+    relationCounts[tableName] = maxRelations - relationCounts[tableName];
+  });
   return relationCounts;
 }
 
@@ -39,89 +46,117 @@ function drawERDiagram(tables) {
   let tableIndexMap = {};
   let relationCounts = calculateRelationCounts(tables);
 
-  const sortedTables = Object.keys(tables).sort((a, b) => relationCounts[b] - relationCounts[a]);
-
-  sortedTables.forEach((tableName, index) => {
+  Object.keys(tables).forEach((tableName, index) => {
     let table = tables[tableName];
     tableIndexMap[tableName] = index;
-
-    const margin = 10 + relationCounts[tableName] * 5;
-
     nodes.push({
       id: index,
-      fieldsCount: table.columns?.length,
-      widthConstraint: { maximum: 150, minimum: 150 },
-      heightConstraint: { maximum: 120, minimum: 100 },
-      tableName: tableName,
       label: createLabel(tableName, table, __defaultNodeExpanded),
       shape: "box",
-      font: { multi: "html", size: 10 },
-      margin: margin,
+      font: { multi: "html", size: 14 },
+      margin: 10,
       expanded: __defaultNodeExpanded,
+      level: relationCounts[tableName], // Now using the inverse relation count
     });
   });
+
 
   Object.keys(tables).forEach((tableName) => {
     const tableInfo = tables[tableName];
     tableInfo.foreignKeys.forEach((fk) => {
       const fromIndex = tableIndexMap[tableName];
       const toIndex = tableIndexMap[fk.references.table];
-      if (toIndex !== undefined && fromIndex !== toIndex) {
-        edges.push({
-          arrowScaleFactor: 0.5,
-          from: fromIndex,
-          to: toIndex,
-          label: `${fk.column} -> ${fk.references.table}.${fk.references.column}`,
-          color: { color: "#eeeeee", highlight: "#000000" },
-          font: { color: "#bbbbbb", highlight: "#000000" },
-          arrows: "to",
-          style: "center",
-        });
-      }
+      edges.push({
+        from: fromIndex,
+        to: toIndex,
+        arrows: "to",
+      });
     });
   });
 
-  const columnSpacing = 200;
-  const rowSpacing = 150;
-  const numberOfColumns = 10;
-  const numberOfRows = 10;
-  const totalNodes = nodes.length;
-  const maxIndex = numberOfColumns * numberOfRows;
 
-  nodes.forEach((node, index) => {
-    if (index < maxIndex) {
-      const row = Math.floor(index / numberOfColumns);
-      const column = index % numberOfColumns;
-      node.x = column * (columnSpacing + node.margin);
-      node.y = row * (rowSpacing + node.margin);
-    } else {
-      node.x = 0;
-      node.y = (numberOfRows + 1) * rowSpacing;
-    }
+
+  let levelGroups = {};
+  nodes.forEach(node => {
+    levelGroups[node.level] = levelGroups[node.level] || [];
+    levelGroups[node.level].push(node);
   });
 
-  const options = {
-    edges: { smooth: true, arrows: "to" },
-    nodes: { shape: "box", margin: 3 },
-    physics: { enabled: false },
-    interaction: { dragNodes: true },
+  Object.keys(levelGroups).forEach(level => {
+    const angleIncrement = (2 * Math.PI) / levelGroups[level].length;
+    levelGroups[level].forEach((node, index) => {
+      const radius = (baseRadius + Number.parseInt(level) * levelDistance)
+      node.x = centerX + radius * Math.cos(index * angleIncrement);
+      node.y = centerY + radius * Math.sin(index * angleIncrement);
+    });
+  });
+
+  const data = {
+    nodes: new vis.DataSet(nodes),
+    edges: new vis.DataSet(edges)
   };
 
-  const container = document.getElementById("erDiagram");
-  const data = { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) };
+  const options = {
+    // height: '100%',
+    // width: '100%',
+    physics: {
+      enabled: false
+    },
+    interaction: {
+      dragNodes: true
+    },
+    edges: {
+      smooth: false
+    },
+    nodes: {
+      // widthConstraint: maxNodeSize,
+      //heightConstraint: //maxNodeSize * 2
+    },
+  };
+
+
+
+  adjustFontSizeForDistance(nodes, 12, levelDistance); // baseFontSize is 14, adjust as needed
+
+  const container = document.getElementById('erDiagram');
   const network = new vis.Network(container, data, options);
 
-  network.fit();
+  network.on("stabilizationIterationsDone", function () {
+    network.setOptions({ physics: false });
+  });
 
   network.on("click", function (params) {
     if (params.nodes.length > 0) {
       const nodeId = params.nodes[0];
-      const node = nodes.find((n) => n.id === nodeId);
-      const tableName = node.tableName;
+      const node = nodes.find(n => n.id === nodeId);
+      const tableName = node.label.match(/<b>(.*?)<\/b>/)[1];
       const tableInfo = tables[tableName];
       node.expanded = !node.expanded;
       node.label = createLabel(tableName, tableInfo, node.expanded);
       data.nodes.update(node);
     }
   });
+
+
+
+
 }
+
+
+
+function adjustFontSizeForDistance(nodes, baseFontSize, levelDistance) {
+  nodes.forEach(node => {
+    const level = node.level || 0;
+    const distanceFactor = Math.log2(levelDistance);
+    node.font.size = Math.max(8, baseFontSize - (level * distanceFactor)); // Ensures font size does not get too small
+  });
+}
+
+// You might also want to add a resize event listener to adjust the canvas size dynamically
+window.addEventListener('resize', function () {
+  const container = document.getElementById('erDiagram');
+  container.style.width = window.innerWidth + 'px';
+  container.style.height = window.innerHeight + 'px';
+  network.fit(); // If using vis.js Network
+});
+
