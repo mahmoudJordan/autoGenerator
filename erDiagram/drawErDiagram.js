@@ -3,60 +3,64 @@ const __defaultNodeExpanded = false;
 function createLabel(tableName, table, expanded = false) {
   let label = `<b>${tableName}</b>\n\n`;
   if (expanded) {
-    // Show all columns
     label += table.columns.map((col) => `${col.name} (${col.type})`).join("\n\n");
   } else {
-    // Show only primary and foreign keys
     const primaryKeys = table.columns.filter((col) => col.key === "PRIMARY KEY");
+    const foreignKeys = table.foreignKeys.map((fk) => table.columns.find(c => c.name == fk.column));
 
-    const foreignKeys = table.foreignKeys.map((fk) => table.columns.find(c => c.name == fk.column))
-
-    label += primaryKeys
-      .map((pk) => `${pk.name} (${pk.type}) [PK]`)
-      .join("\n\n");
-
+    label += primaryKeys.map((pk) => `${pk.name} (${pk.type}) [PK]`).join("\n\n");
     label += '\n\n';
-
-    label += foreignKeys
-      .map((pk) => `${pk.name} (${pk.type}) [FK]`)
-      .join("\n\n");
+    label += foreignKeys.map((fk) => `${fk.name} (${fk.type}) [FK]`).join("\n\n");
   }
   return label;
+}
+
+function calculateRelationCounts(tables) {
+  let relationCounts = {};
+
+  Object.keys(tables).forEach((tableName) => {
+    let count = tables[tableName].foreignKeys.length; // Count foreign keys in the table
+    relationCounts[tableName] = count;
+
+    tables[tableName].columns.forEach((column) => {
+      if (column.key === 'FOREIGN KEY') {
+        // Increase count for the referenced table
+        relationCounts[column.references.table] = (relationCounts[column.references.table] || 0) + 1;
+      }
+    });
+  });
+
+  return relationCounts;
 }
 
 function drawERDiagram(tables) {
   let nodes = [];
   let edges = [];
   let tableIndexMap = {};
+  let relationCounts = calculateRelationCounts(tables);
 
-  Object.keys(tables).forEach((tableName, index) => {
+  const sortedTables = Object.keys(tables).sort((a, b) => relationCounts[b] - relationCounts[a]);
+
+  sortedTables.forEach((tableName, index) => {
     let table = tables[tableName];
     tableIndexMap[tableName] = index;
+
+    const margin = 10 + relationCounts[tableName] * 5;
+
     nodes.push({
       id: index,
-      fieldsCount: tables[tableName].columns?.length,
-      widthConstraint: {
-        maximum: 150,
-        minimum: 150
-      },
-      heightConstraint: {
-        maximum: 120,
-        minimum: 100
-      },
-      tableName: tableName, // Store table name in each node
-      label: createLabel(
-        tableName,
-        tables[tableName],
-        __defaultNodeExpanded
-      ),
+      fieldsCount: table.columns?.length,
+      widthConstraint: { maximum: 150, minimum: 150 },
+      heightConstraint: { maximum: 120, minimum: 100 },
+      tableName: tableName,
+      label: createLabel(tableName, table, __defaultNodeExpanded),
       shape: "box",
       font: { multi: "html", size: 10 },
-      margin: 10,
-      expanded: __defaultNodeExpanded, // Flag to track if the node is expanded
+      margin: margin,
+      expanded: __defaultNodeExpanded,
     });
   });
 
-  // Create edges based on foreign keys
   Object.keys(tables).forEach((tableName) => {
     const tableInfo = tables[tableName];
     tableInfo.foreignKeys.forEach((fk) => {
@@ -68,14 +72,8 @@ function drawERDiagram(tables) {
           from: fromIndex,
           to: toIndex,
           label: `${fk.column} -> ${fk.references.table}.${fk.references.column}`,
-          color: {
-            color: "#eeeeee",
-            highlight: "#000000",
-          },
-          font: {
-            color: "#bbbbbb",
-            highlight: "#000000",
-          },
+          color: { color: "#eeeeee", highlight: "#000000" },
+          font: { color: "#bbbbbb", highlight: "#000000" },
           arrows: "to",
           style: "center",
         });
@@ -83,52 +81,36 @@ function drawERDiagram(tables) {
     });
   });
 
-  // Manually set initial positions for nodes
   const columnSpacing = 200;
   const rowSpacing = 150;
-  const numberOfColumns = 10; // Specify the number of columns
-  const numberOfRows = 10; // Specify the number of rows
+  const numberOfColumns = 10;
+  const numberOfRows = 10;
   const totalNodes = nodes.length;
-  const maxIndex = numberOfColumns * numberOfRows; // Maximum number of nodes to be positioned
+  const maxIndex = numberOfColumns * numberOfRows;
 
   nodes.forEach((node, index) => {
     if (index < maxIndex) {
       const row = Math.floor(index / numberOfColumns);
       const column = index % numberOfColumns;
-      node.x = column * columnSpacing;
-      node.y = row * rowSpacing;// + (node.fieldsCount * 100);
+      node.x = column * (columnSpacing + node.margin);
+      node.y = row * (rowSpacing + node.margin);
     } else {
-      // For nodes exceeding the grid, place them in a default position or handle as needed
       node.x = 0;
-      node.y = (numberOfRows + 1) * rowSpacing; // Example: Place them below the grid
+      node.y = (numberOfRows + 1) * rowSpacing;
     }
   });
 
   const options = {
-    edges: {
-      smooth: true,
-      arrows: "to",
-    },
-    nodes: {
-      shape: "box",
-      margin: 3,
-    },
-    physics: {
-      enabled: false,
-    },
-    interaction: {
-      dragNodes: true, // Allow nodes to be dragged
-    },
+    edges: { smooth: true, arrows: "to" },
+    nodes: { shape: "box", margin: 3 },
+    physics: { enabled: false },
+    interaction: { dragNodes: true },
   };
 
-  // Create a network
   const container = document.getElementById("erDiagram");
   const data = { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) };
-
-  // Initialize Vis.js network
   const network = new vis.Network(container, data, options);
 
-  // Disable physics after the initial layout is stabilized
   network.fit();
 
   network.on("click", function (params) {
@@ -137,13 +119,8 @@ function drawERDiagram(tables) {
       const node = nodes.find((n) => n.id === nodeId);
       const tableName = node.tableName;
       const tableInfo = tables[tableName];
-      // Toggle the expanded state of the node
-      debugger
-      node.x = params.event.x;
-      node.x = params.event.y;
       node.expanded = !node.expanded;
       node.label = createLabel(tableName, tableInfo, node.expanded);
-
       data.nodes.update(node);
     }
   });
